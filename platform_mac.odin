@@ -668,7 +668,7 @@ poll_for_new_controllers :: proc() {
 				break
 			}
 		}
-
+		
 		s.gamepads[available_slot].controller = controller
 		s.gamepads[available_slot].extended_gamepad = extended_gamepad
 		s.gamepads[available_slot].button_inputs = make_button_inputs(extended_gamepad)
@@ -720,7 +720,7 @@ remove_controller :: proc(controller: ^gc.Controller) {
 					stop_haptic_player(&player)
 				}
 			}
-
+			
 			// no need to release controller, extended_gamepad, or button_inputs;
 			// the gamecontroller framework owns the these
 			gamepad = {}
