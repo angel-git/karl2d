@@ -13,9 +13,10 @@ package karl2d
 // `screen_width` and `screen_height` refer to the resolution of the drawable area of the window.
 // The window might be slightly larger due to borders and headers.
 //
-// The internal state created by this procedure can be fetched using `get_internal_state()`. You
-// restore the state using `set_internal_state()`. This is useful for example when doing game 
-// code reload.
+// The return value is a pointer to Karl2D's internal state. You can restore this state later using
+// `set_internal_state()`. This is useful for example when doing game code reload, as the state may
+// get reset when the library is reloaded. You can safely ignore the return value if you have no
+// such needs.
 init :: proc(
 	screen_width: int,
 	screen_height: int,
@@ -23,7 +24,7 @@ init :: proc(
 	options := Init_Options {},
 	allocator := context.allocator,
 	loc := #caller_location
-)
+) -> ^State
 
 // Updates the internal state of the library. Call this early in the frame to make sure inputs and
 // frame times are up-to-date.
@@ -305,6 +306,10 @@ draw_circle_outline :: proc(center: Vec2, radius: f32, thickness: f32, color: Co
 // Draws a line from `start` to `end` of a certain thickness.
 draw_line :: proc(start: Vec2, end: Vec2, thickness: f32, color: Color)
 
+// Draws a triangle using three vertices. The order of the vertices does not matter: Clockwise and
+// counter-clockwise triangles will give the same result.
+draw_triangle :: proc(vertices: [3]Vec2, c: Color)
+
 // Draw a texture at a specific position. The texture will be drawn with its top-left corner at
 // position `pos`.
 //
@@ -402,6 +407,8 @@ set_texture_filter_ex :: proc(
 // happens as part of `update`.
 play_sound :: proc(snd: Sound, loop := false)
 
+stop_sound :: proc(snd: Sound)
+
 // Set the volume of a sound. Range: 0 to 1, where 0 is silence and 1 is the original volume of the
 // sound. The volume change will only affect this instance of the sound. Use `create_sound_instance`
 // to create more instances without duplicating data.
@@ -435,7 +442,12 @@ load_sound_from_bytes :: proc(bytes: []byte) -> Sound
 // Load a sound from some raw audio data. You need to specify the data, format and sample rate of
 // the sound yourself. This assumes that there is no header in the data. If your data has a header
 // (you read the data from a file on disk), then please use `load_sound_from_bytes` instead.
-load_sound_from_bytes_raw :: proc(bytes: []u8, format: Raw_Sound_Format, sample_rate: int) -> Sound
+load_sound_from_bytes_raw :: proc(
+	bytes: []u8,
+	format: Raw_Sound_Format,
+	sample_rate: int,
+	channels: Audio_Channels,
+) -> Sound
 
 // Makes a new sound that uses the same data as the original sound, but you can have different
 // settings such as volume, pan and pitch. This makes it possible to play the same sound multiple
@@ -446,6 +458,44 @@ create_sound_instance :: proc(snd: Sound) -> Sound
 // Destroy a sound instance. If this is the last instance that uses the same data, then the data
 // will also be destroyed.
 destroy_sound :: proc(snd: Sound)
+
+// Load an audio stream from a file on disk. This is often used for playing music.
+//
+// Audio streams do not stream in data automatically from the disk. You need to call
+// `update_audio_stream` every frame to stream in the new data.
+load_audio_stream_from_file :: proc(filename: string) -> Audio_Stream
+
+// Destroy an audio stream previously loaded using `load_audio_stream_from_file`.
+destroy_audio_stream :: proc(audio_stream: Audio_Stream)
+
+// Call once per frame in order to stream new data into the Audio_Stream's buffer. Not calling this
+// will cause audio streams to not play, even though you call `play_audio_stream`.
+update_audio_stream :: proc(audio_stream: Audio_Stream)
+
+// Start playing an audio stream. Don't forget to call `update_audio_stream` every frame in order to
+// stream in the new data.
+//
+// Running this this while the stream is already playing will restart it from the beginning. Use
+// `pause_audio_stream` if you just want to pause it.
+play_audio_stream :: proc(audio_stream: Audio_Stream, loop := false)
+
+// Pause an audio stream. Run `play_audio_stream` to unpause it.
+pause_audio_stream :: proc(audio_stream: Audio_Stream)
+
+// Stop an audio stream. If `play_audio_stream` is called again, the stream will start over from the
+// beginning.
+stop_audio_stream :: proc(audio_stream: Audio_Stream)
+
+// Set the volume of the audio stream. Range: 0 to 1.
+set_audio_stream_volume :: proc(audio_stream: Audio_Stream, volume: f32)
+
+// Set the pan (balance between left and right) of the audio stream. Range: -1 to 1, where -1 is
+// full left, 0 is center and 1 is full right.
+set_audio_stream_pan :: proc(audio_stream: Audio_Stream, pan: f32)
+
+// Set the pitch of the audio stream. Range: 0.01 to infinity. A higher value will make the audio
+// play faster.
+set_audio_stream_pitch :: proc(audio_stream: Audio_Stream, pitch: f32)
 
 // Update the audio mixer and feed more audio data into the audio backend. This is done
 // automatically when `update` runs, so you normally don't need to call this manually.
@@ -494,7 +544,34 @@ rect_middle :: proc(r: Rect) -> Vec2
 rect_center :: rect_middle
 rect_centre :: rect_middle
 
+// Combine a position and a size into a rectangle.
+rect_from_pos_size :: proc(pos: Vec2, size: Vec2) -> Rect
+
+// Get the top left corner of a rectangle.
+rect_top_left :: proc(r: Rect) -> Vec2
+
+// Get the top middle point of a rectangle. That is, the mid-point between the top left and top
+// right corners.
+rect_top_middle :: proc(r: Rect) -> Vec2
+
+// Get the top right corner of a rectangle.
+rect_top_right :: proc(r: Rect) -> Vec2
+
+// Get the bottom left corner of a rectangle.
+rect_bottom_left :: proc(r: Rect) -> Vec2
+
+// Get the bottom middle point of a rectangle. That is, the mid-point between the bottom left and
+// bottom right corners.
+rect_bottom_middle :: proc(r: Rect) -> Vec2
+
+// Get the bottom right corner of a rectangle.
+rect_bottom_right :: proc(r: Rect) -> Vec2
+
+// Make a rectangle smaller by `x` pixels in the horizontal direction and `y` pixels in the vertical
 rect_shrink :: proc(r: Rect, x: f32, y: f32) -> Rect
+
+// Make a rectangle bigger by `x` pixels in the horizontal direction and `y` pixels in the vertical.
+rect_expand :: proc(r: Rect, x: f32, y: f32) -> Rect
 
 // Cut off `h` pixels from the top of `r`. `r` is modified. The cut off part is returned.
 // `m` is the margin added above the cut part.
@@ -512,7 +589,7 @@ rect_cut_left :: proc(r: ^Rect, w: f32, m: f32) -> Rect
 // `m` is the margin added to the right of the cut part.
 rect_cut_right :: proc(r: ^Rect, w: f32, m: f32) -> Rect
 
-// Rotate `v` by `angle_radians` radians around the origin (0, 0).
+// Rotate 2D vector `v` by `angle_radians` radians around the origin (0, 0).
 //
 // If you need to rotate around a point that is not the origin, then you can first subtract the
 // point from `v`, then rotate and then add the point back to the result.
@@ -523,10 +600,10 @@ rotate :: proc(v: Vec2, angle_radians: f32) -> Vec2
 //-------//
 
 // Loads a font from disk and returns a handle that represents it.
-load_font_from_file :: proc(filename: string) -> Font
+load_font_from_file :: proc(filename: string, options: Font_Options = {}) -> Font
 
 // Loads a font from a block of memory and returns a handle that represents it.
-load_font_from_bytes :: proc(data: []u8) -> Font
+load_font_from_bytes :: proc(data: []u8, options: Font_Options = {}) -> Font
 
 // Destroy a font previously loaded using `load_font_from_file` or `load_font_from_bytes`.
 destroy_font :: proc(font: Font)
@@ -639,14 +716,8 @@ set_blend_mode :: proc(mode: Blend_Mode)
 // scissor rectangle by running `set_scissor_rect(nil)`.
 set_scissor_rect :: proc(scissor_rect: Maybe(Rect))
 
-// Fetch the pointer to the internal state of Karl2D. This pointer refers to memory that was
-// allocated when `init` ran. All of the library's needed state is contained in there.
-//
-// Restore the state using `set_internal_state`
-get_internal_state :: proc() -> ^State
-
-// Restore the internal state using the pointer returned by `get_internal_state`. Useful after
-// reloading the library (for example, when doing code hot reload).
+// Restore the internal state using the pointer returned by `init`. Useful after reloading the
+// library (for example, when doing code hot reload).
 set_internal_state :: proc(state: ^State)
 
 //---------------------//
@@ -891,8 +962,18 @@ Pixel_Format :: enum {
 	R_8_UInt,
 }
 
+Font_Options :: struct {
+	// When the font is loaded, the alpha value of each pixel will be multiplied into its RGB values.
+	// This is useful if you want to use `set_blend_mode(.Premultiplied_Alpha)` when drawing text.
+	premultiply_alpha: bool,
+
+	// Passed on to font atlas creation.
+	filter: Texture_Filter,
+}
+
 Font_Data :: struct {
 	atlas: Texture,
+	options: Font_Options,
 
 	// internal
 	fontstash_handle: int,
@@ -902,6 +983,7 @@ Handle :: hm.Handle64
 Texture_Handle :: distinct Handle
 Render_Target_Handle :: distinct Handle
 Font :: distinct int
+DEFAULT_FONT_DATA :: #load("default_fonts/roboto.ttf")
 
 FONT_NONE :: Font {}
 TEXTURE_NONE :: Texture_Handle {}
@@ -910,37 +992,79 @@ RENDER_TARGET_NONE :: Render_Target_Handle {}
 AUDIO_MIX_SAMPLE_RATE :: 44100
 AUDIO_MIX_CHUNK_SIZE :: 1400
 
-Audio_Sample :: [2]f32
+// Single channel audio sample. Can have a value between -1 and 1. For stereo sound every other
+// sample in an array of samples will be interpreted as left and right respectively.
+Audio_Sample :: f32
 
+// Represents a sound you can play using the `play_sound` procedure. Loaded using
+// `load_sound_from_file` or `load_sound_from_bytes`. Create instances of an already loaded sound
+// using `create_sound_instance`.
 Sound :: distinct Handle
 
 SOUND_NONE :: Sound {}
 
-Sound_Data_Handle :: distinct Handle
-
-Sound_Data :: struct {
-	handle: Sound_Data_Handle,
-	samples: []Audio_Sample,
-	sample_rate: int,
-
-	// When a Sound_Instance is destroyed, we check if this reaches zero. If it does, then the
-	// Sound_Data and its samples slice are also destroyed/freed.
-	instances: int,
-}
-
+// A sound instance is what `Sound` handles are mapped to. They contain a handle to a an audio
+// buffer, and the settings for use when playing that buffer. The audio buffer may be shared between
+// multiple sound instances, which allows you to play the same sound multiple times at the same time
+// without having to clone the data.
 Sound_Instance :: struct {
 	handle: Sound,
-	sound_data_handle: Sound_Data_Handle,
-	volume: f32,
-	target_volume: f32,
-	pan: f32,
-	target_pan: f32,
-	pitch: f32,
-	target_pitch: f32,
+
+	// The audio buffer may be used by multiple sound instances. This is the key idea of sound
+	// instances: That you can use `create_sound_instance` to make it possible to play a sound
+	// multiple times at the same time, without having to clone the data.
+	audio_buffer_handle: Audio_Buffer_Handle,
+
+	// If this sound is currently playing, then this identifies the state of the playing sound. It
+	// is PLAYING_AUDIO_BUFFER_NONE (zero) when it is not playing.
+	playing_buffer_handle: Playing_Audio_Buffer_Handle,
+
+	// This exists both here and in the `Playing_Audio_Buffer`. That way we can store settings
+	// even when the sound isn't playing.
+	playback_settings: Audio_Buffer_Playback_Settings,
 }
 
-Playing_Sound :: struct {
-	sound: Sound,
+Audio_Stream :: distinct Handle
+
+AUDIO_STREAM_NONE :: Audio_Stream {}
+
+AUDIO_STREAM_BUFFER_SIZE :: 3 * AUDIO_MIX_SAMPLE_RATE
+
+Audio_Buffer_Handle :: distinct Handle
+
+Audio_Buffer :: struct {
+	handle: Audio_Buffer_Handle,
+
+	// All the samples of the audio buffer. In the case of stereo, the left and right samples are
+	// interleaved.
+	samples: []Audio_Sample,
+
+	// The number of samples per second. Note that the mixer uses 44100 samples per second (as
+	// defined by AUDIO_MIX_SAMPLE_RATE). When the sample rate of the buffer and the mixer do no
+	// match, then interpolation will happen during mixing.
+	sample_rate: int,
+
+	// If this is Stereo, then the left and right samples are interleaved in `samples`.
+	channels: Audio_Channels,
+
+	references: int,
+}
+
+Audio_Buffer_Playback_Settings :: struct {
+	volume: f32,
+	pan: f32,
+	pitch: f32,
+}
+
+PLAYING_AUDIO_BUFFER_NONE :: Playing_Audio_Buffer_Handle {}
+
+Playing_Audio_Buffer_Handle :: distinct Handle
+
+Playing_Audio_Buffer :: struct {
+	handle: Playing_Audio_Buffer_Handle,
+	audio_buffer: Audio_Buffer_Handle,
+	target_settings: Audio_Buffer_Playback_Settings,
+	current_settings: Audio_Buffer_Playback_Settings,
 
 	// How many samples have played?
 	offset: int,
@@ -961,10 +1085,14 @@ Raw_Sound_Format :: enum {
 	Float,
 }
 
+Audio_Channels :: enum {
+	Mono,
+	Stereo,
+}
+
 // This keeps track of the internal state of the library. Usually, you do not need to poke at it.
-// It is created and kept as a global variable when 'init' is called. However, 'init' also returns
-// the pointer to it, so you can later use 'set_internal_state' to restore it (after for example hot
-// reload).
+// It is created and kept as a global variable when 'init' is called. 'init' also returns a pointer
+// to it, so you can later use 'set_internal_state' to restore it (after for example hot reload).
 State :: struct {
 	allocator: runtime.Allocator,
 	frame_arena: runtime.Arena,
@@ -1029,14 +1157,18 @@ State :: struct {
 	audio_backend: Audio_Backend_Interface,
 	audio_backend_state: rawptr,
 
-	sound_data: hm.Dynamic_Handle_Map(Sound_Data, Sound_Data_Handle),
+	audio_buffers: hm.Dynamic_Handle_Map(Audio_Buffer, Audio_Buffer_Handle),
 	sound_instances: hm.Dynamic_Handle_Map(Sound_Instance, Sound),
 
-	// Sounds that have been started as because `play_sound` was called.
-	playing_sounds: [dynamic]Playing_Sound,
+	playing_audio_buffers: hm.Dynamic_Handle_Map(Playing_Audio_Buffer, Playing_Audio_Buffer_Handle),
+
+	// Kept separately in `karl2d_audio_stream_xxx.odin` due to platform differences such as some 
+	// platforms not having file system support properly. This may be addressed in future versions
+	// of Karl2D.
+	audio_stream_manager: Audio_Stream_Manager,
 
 	// 1 megabyte is arbitrarily chosen.
-	mix_buffer: [1*mem.Megabyte]Audio_Sample,
+	mix_buffer: [AUDIO_MIX_CHUNK_SIZE*10][2]Audio_Sample,
 
 	// Where the mixer currently is in the mix buffer.
 	mix_buffer_offset: int,
