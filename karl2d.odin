@@ -192,6 +192,27 @@ close_window_requested :: proc() -> bool {
 	return s.close_window_requested
 }
 
+// Set a callback that will be called during live window resize on macOS and Windows.
+// This allows the application to render frames while the window is being resized interactively.
+// The callback should perform your drawing operations and call `present()`.
+// Events will be processed automatically before the callback is invoked.
+//
+// On macOS, the main thread is blocked by Cocoa's modal resize loop, so a CVDisplayLink
+// dispatches frames on a background thread. On Windows, WM_SIZE messages are delivered
+// during the modal resize loop, so the callback is invoked directly from the message handler.
+//
+// On other platforms this has no effect, as they handle live resize rendering differently.
+//
+// Example:
+//     k2.set_live_resize_callback(proc() {
+//         k2.clear(k2.BLUE)
+//         k2.draw_text("Resizing!", {10, 10}, 50)
+//         k2.present()
+//     })
+set_live_resize_callback :: proc(callback: proc()) {
+	s.live_resize_callback = callback
+}
+
 // Closes the window and cleans up Karl2D's internal state.
 shutdown :: proc() {
 	assert(s != nil, "You've called 'shutdown' without calling 'init' first")
@@ -374,7 +395,26 @@ process_events :: proc() {
 	}
 }
 
-// Fetch a list of all events that happened this frame. Most games can use the `key_is_held`, 
+// Internal procedure called by the platform layer during live window resize (macOS).
+// This ensures rendering continues during the modal resize loop.
+@(private="package")
+_do_live_resize_frame :: proc() {
+	reset_frame_allocator()
+	calculate_frame_time()
+	process_events()
+
+	if s.live_resize_callback != nil {
+		// User provided a callback - they're responsible for drawing and calling present()
+		s.live_resize_callback()
+	} else {
+		// No callback: just flush any pending draws and swap buffers
+		// This ensures a properly-sized frame is displayed (no stretching or black screen)
+		draw_current_batch()
+		rb.present()
+	}
+}
+
+// Fetch a list of all events that happened this frame. Most games can use the `key_is_held`,
 // `mouse_button_went_down` etc procedures to check input state. But if you want a list of events
 // instead, then you can use this. These events will also include things like "Window Focus" events
 // and "Window Resize" events.
@@ -3128,6 +3168,9 @@ State :: struct {
 	fs: fs.FontContext,
 	
 	close_window_requested: bool,
+
+	// Optional callback for live window resize rendering (macOS)
+	live_resize_callback: proc(),
 
 	// All events for this frame. Cleared when `process_events` run
 	events: [dynamic]Event,

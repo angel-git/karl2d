@@ -60,6 +60,21 @@ update :: proc() -> bool
 // Called by `update`, but can be called manually if you need more control.
 close_window_requested :: proc() -> bool
 
+// Set a callback that will be called during live window resize on macOS.
+// This allows the application to render frames while the window is being resized interactively.
+// The callback should perform your drawing operations and call `present()`.
+// Events will be processed automatically before the callback is invoked.
+//
+// On other platforms this has no effect, as they handle live resize rendering differently.
+//
+// Example:
+//     k2.set_live_resize_callback(proc() {
+//         k2.clear(k2.BLUE)
+//         k2.draw_text("Resizing!", {10, 10}, 50)
+//         k2.present()
+//     })
+set_live_resize_callback :: proc(callback: proc())
+
 // Closes the window and cleans up Karl2D's internal state.
 shutdown :: proc()
 
