@@ -276,6 +276,10 @@ mac_init :: proc(
 			},
 
 			windowDidEndLiveResize = proc(_: ^NS.Notification) {
+                s.is_live_resizing = false
+                if s.display_link != nil {
+                    cv.CVDisplayLinkStop(s.display_link)
+                }
 				pressed := ce.Event_pressedMouseButtons()
 
 				if s.left_mouse_held && (pressed & 1) == 0 {
@@ -304,13 +308,7 @@ mac_init :: proc(
    					cv.CVDisplayLinkStart(s.display_link)
    				}
    			},
-   
-   			windowDidEndLiveResize = proc(_: ^NS.Notification) {
-   				s.is_live_resizing = false
-   				if s.display_link != nil {
-   					cv.CVDisplayLinkStop(s.display_link)
-   				}
-   			},	
+      	
 		},
 		"Karl2DWindowDelegate",
 		context,
