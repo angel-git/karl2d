@@ -8,6 +8,8 @@ import NS "core:sys/darwin/Foundation"
 import CF "core:sys/darwin/CoreFoundation"
 import ce "platform_bindings/mac/cocoa_extras"
 import gc "platform_bindings/mac/gamecontroller"
+import cv "platform_bindings/mac/corevideo"
+import dispatch "platform_bindings/mac/dispatch"
 import "core:os"
 import "base:intrinsics"
 import "base:runtime"
@@ -86,7 +88,10 @@ Mac_State :: struct {
 	modifier_key_is_held: #sparse [Keyboard_Key]bool,
 
 	window_render_glue: Window_Render_Glue,
-
+	// Live resize support
+	display_link:     cv.CVDisplayLinkRef,
+	is_live_resizing: bool,
+	
 	// The application icon and the pixels it was built from. Both nil until
 	// `mac_set_window_icon` runs.
 	icon:        ^NS.Image,
@@ -271,6 +276,10 @@ mac_init :: proc(
 			},
 
 			windowDidEndLiveResize = proc(_: ^NS.Notification) {
+                s.is_live_resizing = false
+                if s.display_link != nil {
+                    cv.CVDisplayLinkStop(s.display_link)
+                }
 				pressed := ce.Event_pressedMouseButtons()
 
 				if s.left_mouse_held && (pressed & 1) == 0 {
@@ -291,14 +300,30 @@ mac_init :: proc(
 					screen_height = s.screen_height,
 				})
 			},
+   
+            // Live resize events - enable continuous rendering during window resize
+   			windowWillStartLiveResize = proc(_: ^NS.Notification) {
+   				s.is_live_resizing = true
+   				if s.display_link != nil {
+   					cv.CVDisplayLinkStart(s.display_link)
+   				}
+   			},
+      	
 		},
 		"Karl2DWindowDelegate",
 		context,
 	)
 
 	s.window->setDelegate(window_delegates)
+ 
+    install_cursor_tracker()	
 
-	install_cursor_tracker()
+	// Create CVDisplayLink for live resize rendering
+	// The display link runs on a background thread synchronized to the display refresh,
+	// allowing rendering to continue even when the main thread is blocked by Cocoa's modal resize loop
+	cv.CVDisplayLinkCreateWithActiveCGDisplays(&s.display_link)
+	cv.CVDisplayLinkSetOutputCallback(s.display_link, display_link_callback, nil)
+	// Don't start it yet - it will be started/stopped during live resize
 
 	when RENDER_BACKEND_NAME == "gl" {
 		s.window_render_glue = make_mac_gl_glue(s.window, s.allocator)
@@ -314,6 +339,12 @@ mac_init :: proc(
 }
 
 mac_shutdown :: proc() {
+    // Clean up CVDisplayLink
+    if s.display_link != nil {
+        cv.CVDisplayLinkStop(s.display_link)
+        cv.CVDisplayLinkRelease(s.display_link)
+    }
+    	
 	for it := hm.dynamic_iterator_make(&s.custom_cursors); cd, _ in hm.dynamic_iterate(&it) {
 		cd.cursor->release()
 		delete(cd.pixels, s.allocator)
@@ -1129,6 +1160,41 @@ key_from_macos_keycode :: proc(keycode: u16) -> Keyboard_Key {
 
 	case: return .None
 	}
+}
+
+//----------------------------//
+// LIVE RESIZE SUPPORT        //
+//----------------------------//
+
+// CVDisplayLink callback - fires on a background thread synchronized to display refresh
+// This continues to fire even when the main thread is blocked by Cocoa's modal resize loop
+display_link_callback :: proc "c" (
+	displayLink: cv.CVDisplayLinkRef,
+	inNow: ^cv.CVTimeStamp,
+	inOutputTime: ^cv.CVTimeStamp,
+	flagsIn: cv.CVOptionFlags,
+	flagsOut: ^cv.CVOptionFlags,
+	displayLinkContext: rawptr,
+) -> cv.CVReturn {
+	// Dispatch the frame tick to the main thread using NSOperationQueue
+	// Cocoa's modal resize loop processes the main operation queue, so this will execute
+	// even though the normal event loop is blocked
+	main_queue := dispatch.OperationQueue_mainQueue()
+
+	// Create a block that will execute on the main thread
+	// We pass 's' (our Mac_State) as user_data to the block
+	context = s.odin_ctx
+	block, _ := NS.Block_createGlobal(rawptr(s), proc "c" (state_ptr: rawptr) {
+		state := (^Mac_State)(state_ptr)
+		context = state.odin_ctx
+		_do_live_resize_frame()
+	}, s.allocator)
+
+	if block != nil {
+		dispatch.OperationQueue_addOperationWithBlock(main_queue, block)
+	}
+
+	return cv.kCVReturnSuccess
 }
 
 //--------------------//

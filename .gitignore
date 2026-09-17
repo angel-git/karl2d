@@ -17,6 +17,7 @@ karl2d.doc.compare.odin
 .zed
 .vscode
 .sublime
+.idea/
 scrap/
 .DS_Store
 .claude/worktrees/

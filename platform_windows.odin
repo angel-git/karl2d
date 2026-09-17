@@ -971,14 +971,6 @@ _windows_window_proc :: proc "stdcall" (hwnd: win32.HWND, msg: win32.UINT, wpara
 	case win32.WM_EXITSIZEMOVE:
 		s.in_resize_move_state = false
 
-		if s.screen_width_before_resize_move != s.screen_width ||
-		   s.screen_height_before_resize_move != s.screen_height {
-			append(&s.events, Event_Screen_Resize {
-				width = s.screen_width,
-				height = s.screen_height,
-			})
-		}
-
 	case win32.WM_SIZE:
 		// When the window is minimized, Windows reports the client area as 0x0. Ignore that and
 		// keep reporting the last known screen size, so a 0x0 size never propagates into the
@@ -1001,9 +993,16 @@ _windows_window_proc :: proc "stdcall" (hwnd: win32.HWND, msg: win32.UINT, wpara
 			s.restore_screen_height = s.screen_height
 		}
 
-		// We are actively resizing or moving the window, we'll save the event for later so it does
-		// not get spammy.
-		if !s.in_resize_move_state {
+		if s.in_resize_move_state {
+			// We are actively resizing the window. Win32's modal resize loop blocks the main
+			// game loop, but WM_SIZE is still delivered during it. We emit the resize event
+			// and render a frame so the window contents stay up-to-date instead of freezing.
+			append(&s.events, Event_Screen_Resize {
+				width = int(width),
+				height = int(height),
+			})
+			_do_live_resize_frame()
+		} else {
 			append(&s.events, Event_Screen_Resize {
 				width = s.screen_width,
 				height = s.screen_height,
